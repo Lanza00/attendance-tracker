@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { JWT } from "google-auth-library";
 
 export const runtime = "nodejs";
@@ -22,24 +23,28 @@ export async function POST(request: Request) {
     GOOGLE_SHEETS_SPREADSHEET_ID: spreadsheetId,
     GOOGLE_SERVICE_ACCOUNT_EMAIL: email,
     GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: privateKey,
+    GOOGLE_SERVICE_ACCOUNT_KEY_FILE: keyFile,
   } = process.env;
 
-  if (!spreadsheetId || !email || !privateKey) {
+  if (!spreadsheetId || (!keyFile && (!email || !privateKey))) {
     return Response.json(
       { message: "Check-in is unavailable. Please contact the organizer." },
       { status: 503 },
     );
   }
 
-  const auth = new JWT({
-    email,
-    key: privateKey.replace(/\\n/g, "\n"),
-    scopes: [sheetsScope],
-  });
   const spreadsheet = encodeURIComponent(spreadsheetId);
   const endpoint = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheet}/values/${attendanceRange}:append`;
 
   try {
+    const credentials: { client_email?: string; private_key?: string } = keyFile
+      ? JSON.parse(await readFile(keyFile, "utf8"))
+      : { client_email: email, private_key: privateKey };
+    const auth = new JWT({
+      email: credentials.client_email,
+      key: credentials.private_key?.replace(/\\n/g, "\n"),
+      scopes: [sheetsScope],
+    });
     await auth.request({
       url: endpoint,
       method: "POST",
